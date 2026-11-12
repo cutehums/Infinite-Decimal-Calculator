@@ -1,651 +1,432 @@
-﻿#include "calculator.h"
+#include "calculator.h"
 
+#include <ctype.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-void push(Stack* stack, char data) { // 스텍에 새로운 노드 입력
-    Node *tmp = (Node*) malloc(sizeof(Node));
-    if (tmp == NULL){
-        printf("memory allocation error.\n");
-        return ;
+typedef struct {
+    const char *text;
+    size_t pos;
+    size_t precision;
+    char *error;
+    size_t error_size;
+} Parser;
+
+static char *duplicate_text(const char *text, size_t length) {
+    char *copy = (char *)malloc(length + 1U);
+    if (copy == NULL) return NULL;
+    if (length > 0U) memcpy(copy, text, length);
+    copy[length] = '\0';
+    return copy;
+}
+
+static void set_error(Parser *parser, const char *message) {
+    if (parser->error != NULL && parser->error_size > 0U && parser->error[0] == '\0')
+        snprintf(parser->error, parser->error_size, "%s at position %zu",
+                 message, parser->pos + 1U);
+}
+
+BigDecimal bd_zero(void) {
+    BigDecimal value;
+    value.sign = 0;
+    value.digits = duplicate_text("0", 1U);
+    value.len = value.digits == NULL ? 0U : 1U;
+    value.scale = 0U;
+    value.inexact = 0;
+    return value;
+}
+
+void bd_free(BigDecimal *value) {
+    if (value == NULL) return;
+    free(value->digits);
+    value->digits = NULL;
+    value->len = value->scale = 0U;
+    value->sign = value->inexact = 0;
+}
+
+int bd_is_zero(const BigDecimal *value) {
+    return value == NULL || value->sign == 0 || value->digits == NULL ||
+           (value->len == 1U && value->digits[0] == '0');
+}
+
+void bd_normalize(BigDecimal *value) {
+    size_t leading = 0U;
+    if (value == NULL || value->digits == NULL || value->len == 0U) return;
+    while (leading + 1U < value->len && value->digits[leading] == '0') ++leading;
+    if (leading > 0U) {
+        memmove(value->digits, value->digits + leading, value->len - leading);
+        value->len -= leading;
+        value->digits[value->len] = '\0';
     }
-    tmp -> next = stack -> Top; // tmp의 next를 top의 주소로 대체
-    tmp -> Data = data; // 데이터 저장
-    stack -> Top = tmp; // top을 temp의 주소로 변경해 top이 top의 역할을 하지 않음.(가장 마지막에 저장된 데이터의 위치 가지고 있음)
-}
-
-
-// void push_back(Stack* stack, char data){ // 스텍에 새로운 노드 입력
-//     Node* tmp = (Node*) malloc(sizeof(Node));
-//     if (tmp == NULL){
-//         printf("memory allocation error.\n");
-//         return ;
-//     }
-//     tmp -> pre = stack -> Bottom;// tmp의 pre를 bottom의 주소로 대체
-//     tmp -> Data = data;// 데이터 저장
-//     stack -> Bottom = tmp;// bottom을 temp의 주소로 변경해 bottom이 bottom의 역할을 하지 않음.(가장 마지막에 저장된 데이터의 위치 가지고 있음)
-// }
-
-
-char pop(Stack* stack) { // 스텍 최상위 노드 팝
-    if (isEmpty(stack)) {
-        printf("stack empty.\n");
-        exit(1);
+    while (value->scale > 0U && value->len > 1U &&
+           value->digits[value->len - 1U] == '0') {
+        --value->len;
+        --value->scale;
+        value->digits[value->len] = '\0';
     }
-    char data;
-    Node* node = stack -> Top;
-    data = node->Data;
-    stack->Top=node->next;// 비어있는 next의 주소를 top에 전달
-    free(node);//node헤체해 메모리 확보
-    return data;//데이터값 받아옴
-}
-
-
-char pop_back(Stack* stack) { // 스텍 최하위 노드 팝
-    if (isEmpty(stack)) {
-        printf("stack empty.\n");
-        exit(1);
+    if (value->len == 1U && value->digits[0] == '0') {
+        value->sign = 0;
+        value->scale = 0U;
+        value->inexact = 0;
     }
-    char data;
-    Node* node = stack -> Bottom;
-    data = node->Data;
-    stack->Bottom=node->pre; // 비어있는 pre의 주소를 bottom에 전달
-    free(node); //node헤체해 메모리 확보
-    return data;//데이터값 받아옴
 }
 
-
-// char read_back(Stack* stack) {
-//     if (isEmpty(stack)) {
-//         printf("stack empty.\n");
-//         exit(1);
-//     }
-//     char data;
-//     Node* extract = sta
-// }
-
-
-void init(Stack* stack) { // 스텍 초기화
-	stack->Top = NULL;
-    stack->Bottom = NULL;
+BigDecimal bd_copy(const BigDecimal *value) {
+    BigDecimal copy = bd_zero();
+    char *digits;
+    if (value == NULL || value->digits == NULL) return copy;
+    digits = duplicate_text(value->digits, value->len);
+    if (digits == NULL) return copy;
+    free(copy.digits);
+    copy = *value;
+    copy.digits = digits;
+    return copy;
 }
 
-
-int isEmpty(Stack* stack) { // 스텍이 비었는지 확인
-	return (stack->Top == NULL /* && stack->Bottom == NULL */);
-}
-
-int LSisEmpty(LStack* lsstack ) { //LS 스택이 비었는지 확인 
-    return (lsstack->top == NULL /* && stack->Bottom == NULL */);
-}
-int peek(Stack *stack) { // 스텍의 최상위 노드의 데이터 리턴
-	if (isEmpty(stack))	// 노드가 비었으면 실행시키지 않는다
-	{
-		printf("stack empty.\n");
-		exit(1);
-	}
-	else	// 최상위 노드의 값을 리턴함
-		return stack->Top->Data;
-}
-
-
-// int bottom(Stack *stack)
-// {
-// 	if (isEmpty(stack))	// 노드가 비었으면 실행시키지 않는다
-// 	{
-// 		printf("stack empty.\n");
-// 		exit(1);
-// 	}
-// 	else	// 최상위 노드의 값을 리턴함
-// 		return stack->Bottom->Data;
-// }
-
-
-char priority(char d) { // 연산자 우선순위 계산 
-    switch (d) {
-        case '(': case ')':
-            return 0;
-        case '+': case '-':
-            return 1;
-        case '*': case '/':
-            return 2;
+BigDecimal bd_from_literal(const char *text, size_t length, int *ok) {
+    BigDecimal value = bd_zero();
+    char *digits;
+    size_t i = 0U, out = 0U, dot_at = SIZE_MAX;
+    int sign = 1;
+    if (ok != NULL) *ok = 0;
+    if (text == NULL || length == 0U) return value;
+    if (text[i] == '+' || text[i] == '-') {
+        sign = text[i] == '-' ? -1 : 1;
+        ++i;
     }
-    return -1;
-}
-
-
-char* exprealloc(char* exp, int *cap) { // 내부함수 : 동적할당을 원활하게 해주기 위한 함수
-    (*cap) *= 2;
-    char *tmp = (char*)malloc(sizeof(char) * (*cap));
-    strcpy(tmp, exp);
-    free(exp);
-    return tmp;
-}
-
-
-char* fileRead(int *cap) { // 파일 리더 메소드
-    FILE* input = fopen("input.txt", "r");
-    
-    char f;
-    (*cap) = 16;
-    char *exp = (char*)malloc(sizeof(char) * (*cap));
-    while((f = fgetc(input)) != EOF) {
-        if(size == *cap) {
-            exp = exprealloc(exp, cap);
-        }
-		// printf("%c", f);
-        exp[size++] = f;
-    }
-    fclose(input);
-    
-    // 예외처리 : 괄호완성형 아닐때, .., 영어, 특수문자
-    char ch;
-    char ch2;
-    char* ms = (char*)'*';
-    bool chkdot = 0;
-    bool chkbraket = 0;
-    Stack* s = (Stack*)malloc(sizeof(Stack*));
-    init(s);
-    for(int i = 0; i<size; i++) {
-        ch = exp[i];
-        if (!((ch >= '0' && ch <= '9') || ch =='.' || ch == '+' || ch == '-' || ch == '*' || ch == '(' || ch == ')' || ch == '\n')) {
-            printf("%c INPUT ERROR! Not included num or operator.\n", ch);
-            exit(1);
-        }
-
-        if (ch == '-') {
-            char fch = exp[i-1];
-            if (!(fch >= '0' && fch <= '9')) {
-                // printf("Call\n");
-                if(*cap == size)
-                    exp = exprealloc(exp, cap);
-                size++;
-                for (int j = size; j >= i; j--) {
-                    exp[j] = exp[j - 1];
-                }
-                exp[i]='0';
-            }
-            i++;
-        }
-        
-        if(ch == '.') {
-            if(!chkdot) chkdot = 1;
-            else  {
-                printf("INPUT ERROR! Dot has been writen more then two times.\n");
-                exit(1);
-            }
-        }
-
-        if(ch == '+' || ch == '-' || ch == '*' || ch == '(')
-            chkdot = 0;
-
-        if (ch == '(') {
-            chkbraket = 1;
-            push(s,ch);
-            
-            if (i!=0) {
-                char fch = exp[i-1];
-                if (fch != '+' && fch != '-' && fch != '*' && fch != '(') {
-                    // printf("Call\n");
-                    if(*cap == size)
-                        exp = exprealloc(exp, cap);
-                    size++;
-                    for (int j = size; j >= i; j--) {
-                        exp[j] = exp[j - 1];
-                    }
-                    exp[i]='*';
-                }
-            }
-        }
-        else if(ch == ')') {
-            if (isEmpty(s)) {
-                printf("INPUT ERROR! Maybe '('is missing.\n");
-                exit(1);
-            }
-            else {
-                pop(s);
-            }
+    digits = (char *)malloc(length + 1U);
+    if (digits == NULL) return value;
+    for (; i < length; ++i) {
+        if (text[i] == '.') {
+            if (dot_at != SIZE_MAX) { free(digits); return value; }
+            dot_at = out;
+        } else if (isdigit((unsigned char)text[i])) {
+            digits[out++] = text[i];
+        } else {
+            free(digits); return value;
         }
     }
-
-    if(isEmpty(s) == 0) {
-        printf("INPUT ERROR! Maybe ')'is missing.\n");
-        exit(1);
-    }
-    return exp;
+    if (out == 0U) { free(digits); return value; }
+    digits[out] = '\0';
+    bd_free(&value);
+    value.sign = sign;
+    value.digits = digits;
+    value.len = out;
+    value.scale = dot_at == SIZE_MAX ? 0U : out - dot_at;
+    value.inexact = 0;
+    bd_normalize(&value);
+    if (ok != NULL) *ok = 1;
+    return value;
 }
 
-char* infix2postfix(char exp[], int cap) { // 내부함수 : 후위표기 처리함수
-	int i = 0, k = 0;	// i : loop문 제어 변수, k : 배열 위치에 관한 변수
-	char* p_exp = (char*)malloc(sizeof(char) * cap);
-	char d, op;	// d : 배열문자 저장될t 임시변수, op : 스택값 저장될 임시변수
-	// int len = size;	// 배열의 길이를 저장 변수
-	// printf(" %d ", len);
-	Stack *n = (Stack*)malloc(sizeof(Stack) * cap);
-    int origin = size;
-	init(n);	// 스택 초기화
-    // exprealloc(p_exp, &cap);
-	for (i = 0; i < origin; i++)
-	{
-        // if(size == cap)  exprealloc(p_exp, &cap);
-		d = exp[i];	// 입력받은 배열을 1칸씩 전진시키면서 문자를 확인하고
-		switch (d)		// 아래의 case문대로 조건실행, 혹은 default에 따라 처리함.
-		{
-		case '+': case '-': case '*': case '/':	// 연산자일때
-            p_exp[k++] = ' ';
-			while (!isEmpty(n) && (priority(d) <= priority(peek(n)))) {
-				p_exp[k++] = pop(n); // 스택에 있는 연산자의 우선순위가 더 크거나 같으면 출력
-                p_exp[k++] = ' ';
-                size++;
-            }
-			push(n, d);
-            size++;
-			break;
-		case '(':
-			if (exp[i-1])
-			    push(n, d);
-            size--;
-			break;
-		case ')':
-			op = pop(n);	// 왼쪽 괄호를 만날 때까지 출력
-            p_exp[k++] = ' ';
-			while (op != '(')
-			{
-				p_exp[k++] = op; // 괄호안의 연산자 출력
-				op = pop(n);
-                p_exp[k++] = ' ';
-                size++;
-			}
-            // size--;
-			break;
-		default:
-            p_exp[k++] = d;
-            // p_exp[k++] = ' '; 
-            // size++; // 숫자 출력
-            break;
-		}
-        
-	}
-	while (!isEmpty(n)) {
-        p_exp[k++] = ' ';
-		p_exp[k++] = pop(n);
-        size++;
-    }
-    
-    return p_exp;
-}
-
-
-DList* makeList() { // 리스트 만들기
-    DList *DL = (DList*)malloc(sizeof(DList));
-    DL->head = NULL; DL->tail = NULL;
-    DL->next = NULL;
-    return DL;
-}
-
-
-void insertNode(DList* DL, char data) { // 노드 뒤에 뉴노드 삽입
-    Node* newNode;
-    newNode = (Node*)malloc(sizeof(Node));
-    newNode -> Data = data;
-    if (DL -> head == NULL) {
-        newNode -> next = NULL;
-        newNode -> pre = NULL;
-        DL -> head = newNode;
-        DL -> tail = newNode;
-    }
-    else {
-        newNode -> next = DL -> tail -> next;
-        DL -> tail -> next = newNode;
-        newNode -> pre = DL -> tail;
-        DL -> tail = newNode;
-        if (newNode -> next != NULL)
-            newNode -> next -> pre = newNode;
-    }
-}
-
-
-void insertNodeMiddle(DList* DL, char data, Node* idx) { // Ư�� ��� �տ� ����� ����
-    Node* newNode;
-    newNode = (Node*)malloc(sizeof(Node));
-    newNode->Data = data;
-    if (DL->head == NULL) {
-        newNode->next = NULL;
-        newNode->pre = NULL;
-        DL->head = newNode;
-        DL->tail = newNode;
-    }
-    else {
-        newNode->pre = idx->pre;
-        newNode->next = idx;
-        idx->pre = newNode;
-        if (newNode->pre != NULL)
-            newNode->pre->next = newNode;
-        else
-            DL->head = newNode;
-    }
-}
-
-
-void insertNodeHead(DList* DL, char data) { // 노드 앞에 뉴노드 삽입
-    Node* newNode;
-    newNode = (Node*)malloc(sizeof(Node));
-    newNode -> Data = data;
-    if (DL -> head == NULL) {
-        newNode -> next = NULL;
-        newNode -> pre = NULL;
-        DL -> head = newNode;
-        DL -> tail = newNode;
-    }
-    else {
-        newNode -> pre = DL -> head -> pre;
-        DL -> head -> pre = newNode;
-        newNode -> next = DL -> head;
-        DL -> head = newNode;
-        if (newNode -> pre != NULL)
-            newNode -> pre -> next = newNode;
-    }
-}
-
-
-// void deleteNode(DList* DL, Node* Dnode) { // 리스트의 원하는 Dnode 삭제
-//     if (DL -> head == NULL) return;
-//     else if (Dnode == NULL) return;
-//     else {
-//         Dnode -> pre -> next = Dnode -> next;
-//         Dnode -> next -> pre = Dnode -> pre;
-//         free(Dnode);
-//     }
-// }
-
-
-// char* getList(DList* DL) { // 리스트에 저장된 값 스트링(주소)으로 가져옴
-//     Node* tmp;
-//     char* num;
-//     while (tmp != NULL) {
-//         strcat(num, tmp->Data);
-//         tmp = tmp -> next;
-//     }
-//     return num;
-// }
-
-
-// Node* searchNode(DList* DL, char* data) {
-//     Node *tmp;
-//     tmp = DL -> head;
-//     while (tmp != NULL) {
-//         if (strcmp(tmp -> Data, data) == 0) return tmp;
-//         else tmp = tmp -> next;
-//     }
-//     return tmp;
-// }
-
-
-LStack* makeLS() { // 새로운 리스트스텍과 그 초기값 지정
-    LStack* ls = (LStack*)malloc(sizeof(LStack*));
-    ls->top = NULL;
-}
-
-
-void LSpush(LStack* LS, DList* DL) { // 리스트스텍에 푸시
-    DL -> next = LS -> top;
-    LS -> top = DL;
-}
-
-
-DList* LSpop(LStack* LS) { // 리스트스텍에서 팝
-    DList* DL = LS -> top;
-    LS -> top = DL-> next;
-    return DL; // !메모리 누수 있음!
-}
-
-
-DList* LSref(LStack* LS) { // 리스트스텍에서 탑의 데이터만 가져옴
-    return LS -> top;
-}
-
-
-void Dlist_maker(char* exp, LStack* fac, Stack* op) { 
-    int num_len = 0;
-    int i = 0;
-    init(op);
-    for (; num_len <= size; num_len++){
-        if (exp[num_len] == ' '){ // 빈칸이면
-            if ((exp[num_len-1] >= '0' && exp[num_len-1] <= '9') || exp[num_len-1] == '.'){ //빈칸 앞이 숫자이면
-                DList* list = makeList();
-                for (; i < num_len; i++) {
-                    insertNode(list, exp[i]);
-                    // printf("%c", exp[i]); // 인자 확인용
-                }
-                LSpush(fac, list);
-                // printf(" is factor.\n"); // 인자 확인용 코드
-                i++;
-            }
-            else if (exp[num_len-1] == '-' || exp[num_len-1] == '+' || exp[num_len-1] == '*'){ //빈칸 앞이 연산자이면
-                push(op,exp[num_len-1]);
-                // printf("operator is %c.\n", exp[num_len-1]); // 연산자 확인용
-                i+=2;
-            }
-            else if (exp[num_len-1] == ' ') {
-                i+=2;
-            }
-        }
-        else if(num_len+1 == size) {
-            // printf("CALL"); // 마지막 연산자 스텍여부 확인용
-            push(op, exp[num_len]);
+BigDecimal bd_mul(const BigDecimal *a, const BigDecimal *b) {
+    BigDecimal result = bd_zero();
+    size_t total, i, first;
+    int *work;
+    char *digits;
+    if (bd_is_zero(a) || bd_is_zero(b)) return result;
+    if (a->len > SIZE_MAX - b->len) return result;
+    total = a->len + b->len;
+    work = (int *)calloc(total, sizeof(int));
+    if (work == NULL) return result;
+    for (i = a->len; i-- > 0U;) {
+        size_t j;
+        for (j = b->len; j-- > 0U;) {
+            size_t index = i + j + 1U;
+            int product = (a->digits[i] - '0') * (b->digits[j] - '0') + work[index];
+            work[index] = product % 10;
+            work[index - 1U] += product / 10;
         }
     }
-}
-
-//곱셈을 계산하는 함수
-DList* multiply(DList* a, DList* b) {
-    //포인터 초기화
-    DList* result = makeList();
-
-    Node* result_cur = result->tail;
-    Node* a_cur = a->tail;
-    Node* b_cur = b->tail;
-    Node* temp_cur = NULL;
-
-    bool isminus = false;
-
-    int temp = 0;
-    int upper = 0;
-    int real_num = 0;
-
-
-    //두 번째 연결 리스트 요소 이동
-    while (a_cur!=NULL) {
-        // '-' 부호가 있는지 검사
-        // '.'일 때 한 칸 더 움직이기
-        DList* temp_list = makeList();
-        if (a_cur->Data == '.') {
-            a_cur = a_cur->pre;
-        }
-        else if (a_cur->Data == '-') {
-            isminus = true;
-            a_cur = a_cur->pre;
-        }
-        temp_list = getTempMultiple(a, b, a_cur);
-        temp_cur = temp_list->head;
-
-        //while (temp_cur != NULL) {
-        //    printf("%c ", temp_cur->Data);
-        //    temp_cur = temp_cur->next;
-        //}
-        //printf("\n");
-        result = list_add(result, temp_list);
-        a_cur = a_cur->pre;
-    }
-    //점 찾기 위해 초기화
-    a_cur = a->tail;
-    b_cur = b->tail;
-    result_cur = result->tail;
-    //두 연결 리스트의 '.'위치 검사
-    while (a_cur->Data == '.') {
-        if (a_cur == NULL) {
-            temp_cur = result_cur = result->tail;
-            break;
-        }
-        a_cur = a_cur->pre;
-        result_cur = result_cur->pre;
-    }
-    while (b_cur->Data == '.') {
-        if (b_cur == NULL) {
-            result_cur = temp_cur;
-            break;
-        }
-        a_cur = a_cur->pre;
-        result_cur = result_cur->pre;
-    }
-    if (result_cur != result->tail) {
-        insertNodeMiddle(result, '.', result_cur);
-    }
-    if (isminus) {
-        insertNodeHead(result, '-');
-    }
-    free(result_cur);
-    free(a_cur);
-    free(b_cur);
+    first = 0U;
+    while (first + 1U < total && work[first] == 0) ++first;
+    digits = (char *)malloc(total - first + 1U);
+    if (digits == NULL) { free(work); return result; }
+    for (i = first; i < total; ++i) digits[i - first] = (char)('0' + work[i]);
+    digits[total - first] = '\0';
+    free(work);
+    bd_free(&result);
+    result.sign = a->sign * b->sign;
+    result.digits = digits;
+    result.len = total - first;
+    result.scale = a->scale + b->scale;
+    result.inexact = a->inexact || b->inexact;
+    bd_normalize(&result);
     return result;
 }
 
-//임시 DList를 만들어서 쪼개서 계산한다.
-DList* getTempMultiple(DList* a, DList* b, Node* a_cur_origin) {
-    Node* a_cur = a->tail;
-    Node* b_cur = b->tail;
-    DList* temp_list = makeList();
-    Node* temp_cur = temp_list->tail;
-
-    //앞에 0 추가
-    while (a_cur != a_cur_origin) {
-        if (a_cur == NULL) return NULL;
-        a_cur = a_cur->pre;
-        insertNodeHead(temp_list, '0');
-        temp_cur = temp_list->head;
+static void strip_leading_zeros(char *digits, size_t *length) {
+    size_t leading = 0U;
+    while (leading + 1U < *length && digits[leading] == '0') ++leading;
+    if (leading > 0U) {
+        memmove(digits, digits + leading, *length - leading);
+        *length -= leading;
+        digits[*length] = '\0';
     }
-    //한 바퀴만 반복
-    if (a_cur->Data == '.'|| a_cur->Data == '-') {
-        a_cur = a_cur->pre;
-    }
-    //첫 번째 연결 리스트 요소 이동
-    while (b_cur != NULL) {
-        if (b_cur->Data == '.'|| b_cur->Data == '-') {
-            b_cur = b_cur->pre;
-        }
-        //곱셈 후 한자리씩 분할
-        int temp = (a_cur->Data - '0') * (b_cur->Data - '0');
-        int real_num = temp % 10;
-        int upper = (int)(temp / 10);
+}
 
-        //노드가 없을 때 생성 후 값 입력
-        if (temp_cur == NULL||temp_cur->Data=='0') {
-            insertNodeHead(temp_list, real_num + '0');
-            temp_cur = temp_list->head;
+static int integer_compare(const char *a, size_t a_len,
+                           const char *b, size_t b_len) {
+    int cmp;
+    if (a_len != b_len) return a_len > b_len ? 1 : -1;
+    cmp = memcmp(a, b, a_len);
+    return cmp > 0 ? 1 : (cmp < 0 ? -1 : 0);
+}
+
+static void integer_subtract_in_place(char *a, size_t *a_len,
+                                      const char *b, size_t b_len) {
+    size_t ai = *a_len, bi = b_len;
+    int borrow = 0;
+    while (ai > 0U) {
+        int av, bv = 0;
+        --ai;
+        if (bi > 0U) bv = b[--bi] - '0';
+        av = (a[ai] - '0') - borrow - bv;
+        if (av < 0) { av += 10; borrow = 1; } else borrow = 0;
+        a[ai] = (char)('0' + av);
+    }
+    strip_leading_zeros(a, a_len);
+}
+
+static char *append_zeros(const char *digits, size_t len, size_t zeros,
+                          size_t *out_len) {
+    char *result;
+    if (len > SIZE_MAX - zeros) return NULL;
+    result = (char *)malloc(len + zeros + 1U);
+    if (result == NULL) return NULL;
+    memcpy(result, digits, len);
+    memset(result + len, '0', zeros);
+    result[len + zeros] = '\0';
+    *out_len = len + zeros;
+    return result;
+}
+
+BigDecimal bd_div(const BigDecimal *a, const BigDecimal *b,
+                  size_t precision, int *ok) {
+    BigDecimal result = bd_zero();
+    long long exponent;
+    char *numerator = NULL, *denominator = NULL, *quotient = NULL, *remainder = NULL;
+    size_t numerator_len = 0U, denominator_len = 0U;
+    size_t quotient_len = 0U, remainder_len = 1U, i;
+    if (ok != NULL) *ok = 0;
+    if (bd_is_zero(b)) return result;
+    if (bd_is_zero(a)) { if (ok != NULL) *ok = 1; return result; }
+    if (precision > 100000U || a->scale > (size_t)LLONG_MAX ||
+        b->scale > (size_t)LLONG_MAX) return result;
+    exponent = (long long)b->scale - (long long)a->scale + (long long)precision;
+    if (exponent >= 0) {
+        numerator = append_zeros(a->digits, a->len, (size_t)exponent, &numerator_len);
+        denominator = duplicate_text(b->digits, b->len);
+        denominator_len = b->len;
+    } else {
+        numerator = duplicate_text(a->digits, a->len);
+        numerator_len = a->len;
+        denominator = append_zeros(b->digits, b->len, (size_t)(-exponent), &denominator_len);
+    }
+    if (numerator == NULL || denominator == NULL) goto cleanup;
+    quotient = (char *)malloc(numerator_len + 1U);
+    remainder = (char *)malloc(denominator_len + 2U);
+    if (quotient == NULL || remainder == NULL) goto cleanup;
+    remainder[0] = '0'; remainder[1] = '\0';
+    for (i = 0U; i < numerator_len; ++i) {
+        int digit = 0;
+        if (remainder_len == 1U && remainder[0] == '0') remainder[0] = numerator[i];
+        else { remainder[remainder_len++] = numerator[i]; remainder[remainder_len] = '\0'; }
+        strip_leading_zeros(remainder, &remainder_len);
+        while (integer_compare(remainder, remainder_len, denominator, denominator_len) >= 0) {
+            integer_subtract_in_place(remainder, &remainder_len, denominator, denominator_len);
+            ++digit;
         }
-        //노드가 있을 때 기존 노드의 값에서 1의 자리 수 더하기
+        quotient[quotient_len++] = (char)('0' + digit);
+    }
+    quotient[quotient_len] = '\0';
+    strip_leading_zeros(quotient, &quotient_len);
+    bd_free(&result);
+    result.sign = a->sign * b->sign;
+    result.digits = quotient;
+    quotient = NULL;
+    result.len = quotient_len;
+    result.scale = precision;
+    result.inexact = a->inexact || b->inexact ||
+                     !(remainder_len == 1U && remainder[0] == '0');
+    bd_normalize(&result);
+    if (ok != NULL) *ok = 1;
+cleanup:
+    free(numerator); free(denominator); free(quotient); free(remainder);
+    return result;
+}
+
+char *bd_to_string(const BigDecimal *value) {
+    size_t integer_digits, leading_zeros = 0U, sign_chars, dot_chars, suffix_chars;
+    size_t total, out = 0U;
+    char *text;
+    if (value == NULL || value->digits == NULL) return duplicate_text("0", 1U);
+    sign_chars = value->sign < 0 ? 1U : 0U;
+    dot_chars = value->scale > 0U ? 1U : 0U;
+    suffix_chars = value->inexact ? 3U : 0U;
+    if (value->scale >= value->len) {
+        integer_digits = 1U;
+        leading_zeros = value->scale - value->len;
+    } else integer_digits = value->len - value->scale;
+    total = sign_chars + integer_digits + dot_chars + leading_zeros +
+            (value->scale >= value->len ? value->len : value->scale) + suffix_chars;
+    text = (char *)malloc(total + 1U);
+    if (text == NULL) return NULL;
+    if (value->sign < 0) text[out++] = '-';
+    if (value->scale == 0U) {
+        memcpy(text + out, value->digits, value->len); out += value->len;
+    } else if (value->scale >= value->len) {
+        text[out++] = '0'; text[out++] = '.';
+        memset(text + out, '0', leading_zeros); out += leading_zeros;
+        memcpy(text + out, value->digits, value->len); out += value->len;
+    } else {
+        memcpy(text + out, value->digits, integer_digits); out += integer_digits;
+        text[out++] = '.';
+        memcpy(text + out, value->digits + integer_digits, value->scale); out += value->scale;
+    }
+    if (value->inexact) { memcpy(text + out, "...", 3U); out += 3U; }
+    text[out] = '\0';
+    return text;
+}
+
+static void skip_spaces(Parser *parser) {
+    while (isspace((unsigned char)parser->text[parser->pos])) ++parser->pos;
+}
+
+static int parse_expression(Parser *parser, BigDecimal *result);
+
+static int parse_number(Parser *parser, BigDecimal *result) {
+    size_t start, digits = 0U;
+    int saw_dot = 0, ok = 0;
+    skip_spaces(parser);
+    start = parser->pos;
+    while (1) {
+        char ch = parser->text[parser->pos];
+        if (isdigit((unsigned char)ch)) { ++digits; ++parser->pos; }
+        else if (ch == '.' && !saw_dot) { saw_dot = 1; ++parser->pos; }
+        else break;
+    }
+    if (digits == 0U) { set_error(parser, "number expected"); return 0; }
+    *result = bd_from_literal(parser->text + start, parser->pos - start, &ok);
+    if (!ok || result->digits == NULL) {
+        set_error(parser, "invalid number or out of memory"); bd_free(result); return 0;
+    }
+    return 1;
+}
+
+static int parse_factor(Parser *parser, BigDecimal *result) {
+    int sign = 1;
+    skip_spaces(parser);
+    while (parser->text[parser->pos] == '+' || parser->text[parser->pos] == '-') {
+        if (parser->text[parser->pos] == '-') sign = -sign;
+        ++parser->pos; skip_spaces(parser);
+    }
+    if (parser->text[parser->pos] == '(') {
+        ++parser->pos;
+        if (!parse_expression(parser, result)) return 0;
+        skip_spaces(parser);
+        if (parser->text[parser->pos] != ')') {
+            set_error(parser, "')' expected"); bd_free(result); return 0;
+        }
+        ++parser->pos;
+    } else if (!parse_number(parser, result)) return 0;
+    result->sign *= sign;
+    return 1;
+}
+
+static int parse_term(Parser *parser, BigDecimal *result) {
+    BigDecimal left;
+    if (!parse_factor(parser, &left)) return 0;
+    while (1) {
+        char op;
+        BigDecimal right, combined;
+        int ok = 1;
+        skip_spaces(parser); op = parser->text[parser->pos];
+        if (op != '*' && op != '/') break;
+        ++parser->pos;
+        if (!parse_factor(parser, &right)) { bd_free(&left); return 0; }
+        if (op == '*') combined = bd_mul(&left, &right);
         else {
-            int inner_temp = ((temp_cur->Data - '0') + real_num);
-            if (inner_temp >= 10) {
-                upper += 1;
-                temp_cur->Data = (inner_temp - 10) + '0';
-            }
-            else {
-                temp_cur->Data = ((temp_cur->Data - '0') + real_num) + '0';
-            }
+            combined = bd_div(&left, &right, parser->precision, &ok);
+            if (!ok) set_error(parser, bd_is_zero(&right) ? "division by zero" : "division failed");
         }
-        if (upper != 0) {
-            insertNodeHead(temp_list, upper+'0');
-        }
-        b_cur = b_cur->pre;
-        temp_cur = temp_cur->pre;
+        bd_free(&left); bd_free(&right);
+        if (!ok || combined.digits == NULL) { bd_free(&combined); return 0; }
+        left = combined;
     }
-    return temp_list;
+    *result = left;
+    return 1;
 }
 
-void Printer(DList* DL) { 
-    Node* num = DL -> head;
-    while (num != NULL) {
-        char data = num -> Data;
-        num = num->next;
-        printf("%c", data);
+static int parse_expression(Parser *parser, BigDecimal *result) {
+    BigDecimal left;
+    if (!parse_term(parser, &left)) return 0;
+    while (1) {
+        char op;
+        BigDecimal right, combined;
+        skip_spaces(parser); op = parser->text[parser->pos];
+        if (op != '+' && op != '-') break;
+        ++parser->pos;
+        if (!parse_term(parser, &right)) { bd_free(&left); return 0; }
+        combined = op == '+' ? bd_add(&left, &right) : bd_sub(&left, &right);
+        bd_free(&left); bd_free(&right);
+        if (combined.digits == NULL) { set_error(parser, "out of memory"); return 0; }
+        left = combined;
     }
-} 
-
-int Dot(DList* dlist){
-    int Dot = 0;
-    Node *cur = dlist->head;
-    while (cur != NULL){
-        if (cur->Data == 46){
-            Dot = 1;
-            break;
-        }
-        cur = cur->next;
-    }
-    return Dot;
+    *result = left;
+    return 1;
 }
 
-
-int integer_size(DList* dlist){//정수부분의 길이를 리턴
-    int size = 0;
-    Node *cur = dlist->head;
-    while (cur->Data != 46){//점 이라면
-        cur = cur->next;
-        size++;
+int calculator_eval(const char *expression, size_t division_precision,
+                    BigDecimal *result, char *error, size_t error_size) {
+    Parser parser;
+    BigDecimal value;
+    if (error != NULL && error_size > 0U) error[0] = '\0';
+    if (expression == NULL || result == NULL) {
+        if (error != NULL && error_size > 0U) snprintf(error, error_size, "expression is missing");
+        return 0;
     }
-    return size;
+    parser.text = expression; parser.pos = 0U; parser.precision = division_precision;
+    parser.error = error; parser.error_size = error_size;
+    if (!parse_expression(&parser, &value)) return 0;
+    skip_spaces(&parser);
+    if (parser.text[parser.pos] != '\0') {
+        set_error(&parser, "unexpected character"); bd_free(&value); return 0;
+    }
+    *result = value;
+    return 1;
 }
 
-
-int decimal_size(DList* dlist){//소수부분의 길이를 리턴
-    int size = 0;
-    Node *cur = dlist->tail;
-    while (cur->Data != 46){//점 이라면
-        cur = cur->pre;
-        size++;
+char *read_expression_file(const char *path, char *error, size_t error_size) {
+    FILE *file;
+    long length;
+    size_t read_count;
+    char *text;
+    if (error != NULL && error_size > 0U) error[0] = '\0';
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        if (error != NULL && error_size > 0U) snprintf(error, error_size, "cannot open %s", path);
+        return NULL;
     }
-    return size;
+    if (fseek(file, 0L, SEEK_END) != 0 || (length = ftell(file)) < 0L ||
+        fseek(file, 0L, SEEK_SET) != 0) {
+        fclose(file);
+        if (error != NULL && error_size > 0U) snprintf(error, error_size, "cannot read %s", path);
+        return NULL;
+    }
+    text = (char *)malloc((size_t)length + 1U);
+    if (text == NULL) { fclose(file); return NULL; }
+    read_count = fread(text, 1U, (size_t)length, file);
+    fclose(file);
+    text[read_count] = '\0';
+    while (read_count > 0U && isspace((unsigned char)text[read_count - 1U]))
+        text[--read_count] = '\0';
+    if (read_count == 0U) {
+        free(text);
+        if (error != NULL && error_size > 0U) snprintf(error, error_size, "%s is empty", path);
+        return NULL;
+    }
+    return text;
 }
-
-
-// int main() { // 테스트용 메인 함수 - 추후 삭제 요망
-//     int cap;
-//     char *exp = fileRead(&cap);
-//     for(int i = 0; i < size; i++)
-//         printf("%c", exp[i]);
-//     printf("\n");
-//     char* pexp = infix2postfix(exp, cap);
-    
-//     for(int i = 0; i < size; i++)
-//         printf("%c", pexp[i]);
-//     printf("|\n");
-//     Stack* op = (Stack*)malloc(sizeof(Stack*)); // 계산에 사용될 연산자들을 저장하는 스텍(계산순서대로 쌓임)
-//     LStack* fac = makeLS(); // 계산에 사용될 인수들을 저장하는 스텍(계산순서대로 쌓임)
-//     Dlist_maker(pexp, fac, op);
-
-//     // DList* a = LSpop(fac);
-
-//     // ListNum(a);
-
-//     // printf("\n");
-
-//     // DList* b = LSpop(fac);
-
-//     // ListNum(b);
-
-//     // printf("\n");
-
-//     DList* c = LSpop(fac);
-
-//     Printer(c);
-
-//     printf("\n");
-
-//     DList* d = LSpop(fac);
-
-//     Printer(d);
-
-//     printf("\n");
-
-//     DList* multi_result = multiply(c, d);
-
-//     Printer(multi_result);
-// }
